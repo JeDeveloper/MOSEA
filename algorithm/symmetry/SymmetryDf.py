@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import logging
 
 from algorithm.lattice.Voxel import Voxel
@@ -107,7 +108,15 @@ class SymmetryDf:
         """
         voxel1_id = self.lattice.get_voxel(voxel1).id
         voxel2_id = self.lattice.get_voxel(voxel2).id
+
+        # map unit cell voxels to their main original counterparts if supplied
+        if voxel1_id >= len(self.lattice.voxels):
+            voxel1_id = self.lattice.voxel_dict3[voxel1_id]
+        if voxel2_id >= len(self.lattice.voxels):
+            voxel2_id = self.lattice.voxel_dict3[voxel2_id]
+
         voxel_pair_label = VoxelPair.make_label(frozenset([voxel1_id, voxel2_id]))
+        # print(f"Getting symlist for voxel pair {voxel_pair_label}")
 
         # get those symmetries which are True for the voxel pair
         all_symmetries = self.symmetry_df.loc[voxel_pair_label]
@@ -156,8 +165,9 @@ class SymmetryDf:
             for voxel1 in self.lattice.voxels:
 
                 # transform surroundings of voxel1 once per symmetry
-                surr1 = self.surroundings.voxel_surroundings(voxel1)
-                rot_surr1 = self.surroundings.rotate(surr1, sym_func)
+                coords1, cargos1 = self.surroundings.voxel_surroundings2(voxel1)
+                rot_coords1 = self.surroundings.rotate2(coords1, sym_func)
+                rot_coords1, cargos1 = self.surroundings.canonicalize(rot_coords1, cargos1)
 
                 for voxel2 in self.lattice.voxels:
                     # make voxel pair label (str) to index into SymmetryDf
@@ -170,12 +180,9 @@ class SymmetryDf:
 
                     # CHECK SYMMETRY:
                     # two voxels are symmetric if their surroundings are the same after one is transformed
-                    surr2 = self.surroundings.voxel_surroundings(voxel2)
-                    
-                    if set(surr2.keys()) == set(rot_surr1.keys()):
-                        has_symmetry = all(surr2[key] == rot_surr1[key] for key in surr2.keys())
-                    else:
-                        has_symmetry = False
+                    coords2, cargos2 = self.surroundings.voxel_surroundings2(voxel2)
+                    coords2, cargos2 = self.surroundings.canonicalize(coords2, cargos2)
+                    has_symmetry = np.array_equal(cargos1, cargos2) and np.array_equal(rot_coords1, coords2)
 
                     self.symmetry_df.loc[voxel_pair_label, sym_label] = has_symmetry
 

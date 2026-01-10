@@ -6,6 +6,7 @@ class Lattice:
     """store the basic unit cell"""
     def __init__(self, voxels: list[Voxel], is_unit_cell: bool=True):
         
+        # --- LATTICE METADATA ---
         # get the dimensions of the lattice that was inputted
         x = 0 if is_unit_cell else 1
         self.xdim = max([v.coords[0] for v in voxels]) +x
@@ -14,11 +15,17 @@ class Lattice:
         self.dimensions = self.xdim, self.ydim, self.zdim
         self.unit_dimensions = [d+x for d in self.dimensions]
 
-        # print(f"lattice found dimensions: {self.xdim, self.ydim, self.zdim}")
-
+        # --- DATA STRUCTURES ---
+        # the item arrays
         self.voxels = voxels
-        self.unit_cell_voxels = []
-        self.voxel_dict = {}
+        self.unit_cell_voxels = [] # voxels on the unit cell boundary
+
+        # easy-lookup hashmaps
+        self.voxel_dict = {} # {voxel.coords: voxel.id}
+        self.voxel_dict2 = {} # {unit_cell_voxel.coords: unit_cell_voxel.id}
+        self.voxel_dict3 = {} # {unit_cell_voxel.id: voxel.id}
+
+        # ---> INIT voxels + partners
         self.init_voxels(voxels, is_unit_cell)
         self.fill_partners()
 
@@ -50,6 +57,8 @@ class Lattice:
             # redo the IDs
             for v in self.voxels:
                 self.voxel_dict[v.coords] = v.id
+            for uv in self.unit_cell_voxels:
+                self.voxel_dict2[uv.coords] = uv.id
             
         # --- IS NOT A UNIT CELL ---
         # parse voxels for unit_cell_voxels and voxels
@@ -90,6 +99,16 @@ class Lattice:
                 self.unit_cell_voxels.append(new_v)
                 seen.add(new_coords)
                 # print(f'adding new voxel @ {new_coords}')
+        
+        # fill in voxel_dict2 and voxel_dict3
+        for uv in self.unit_cell_voxels:
+            ov = self.get_voxel((
+                uv.coords[0] % self.dimensions[0],
+                uv.coords[1] % self.dimensions[1],
+                uv.coords[2] % self.dimensions[2]
+            ))
+            self.voxel_dict2[uv.coords] = uv.id
+            self.voxel_dict3[uv.id] = ov.id
 
 
     def find_partner(self, voxel, vertex: tuple[float,float,float]) -> tuple[Voxel, Bond]:
@@ -126,20 +145,50 @@ class Lattice:
                 # set the partners
                 b.set_partner(pb)
                 pb.set_partner(b)
+        for uv in self.unit_cell_voxels:
+            v = self.get_voxel(self.voxel_dict3[uv.id])
+            for ucoords, ub in uv.bonds.items():
+                vb = v.get_bond(ucoords)
+                ub.set_partner(vb.get_partner())
 
     def get_voxel(self, v) -> Voxel:
         """ get the voxel obj in the lattice based on either its ID or its lattice coords """
-        if isinstance(v, Voxel): # CASE 0: supplied Voxel object already
+        # CASE 0: supplied Voxel object already
+        if isinstance(v, Voxel): 
             return v
-        elif isinstance(v, int): # CASE 1: supplied voxel.id (int)
-            voxel_obj = self.voxels[v]
-        elif isinstance(v, tuple): # CASE 2: supplied lattice coords (tuple)
-            i = self.voxel_dict[v]
-            voxel_obj = self.voxels[i]
-        elif isinstance(v, np.ndarray): # CASE 3: supplied lattice coords (np)
-            i = self.voxel_dict[tuple(v)]
-            voxel_obj = self.voxels[i]
-        else: # CASE 4: invalid type
+        # CASE 1: supplied voxel.id (int)
+        elif isinstance(v, int): 
+            if v < len(self.voxels):
+                voxel_obj = self.voxels[v]
+            else:
+                voxel_obj = self.unit_cell_voxels[v - len(self.voxels)]
+        # CASE 2: supplied lattice coords (tuple)
+        elif isinstance(v, tuple): 
+            i = self.voxel_dict.get(v, None)
+            if i is None:
+                i = self.voxel_dict2.get(v, None)
+                voxel_obj = self.unit_cell_voxels[i - len(self.voxels)]
+            else:
+                voxel_obj = self.voxels[i]
+        # CASE 3: supplied lattice coords (np)
+        elif isinstance(v, np.ndarray): 
+            i = self.voxel_dict.get(tuple(v), None)
+            if i is None:
+                i = self.voxel_dict2.get(tuple(v), None)
+                voxel_obj = self.unit_cell_voxels[i - len(self.voxels)]
+            else:
+                voxel_obj = self.voxels[i]
+        # CASE 4: invalid type
+        else: 
             raise ValueError(f"invalid voxel.id type: {type(v)}")
         
         return voxel_obj
+    
+    def is_unit_cell_voxel(self, v) -> bool:
+        """returns whether the given voxel (Voxel or voxel.id) is a unit cell voxel"""
+        if isinstance(v, Voxel):
+            return v in self.unit_cell_voxels
+        elif isinstance(v, int):
+            return v in self.voxel_dict3.keys()
+        else:
+            raise ValueError(f"invalid voxel.id type: {type(v)}")

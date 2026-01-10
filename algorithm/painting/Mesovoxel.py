@@ -106,7 +106,7 @@ class Mesovoxel:
     
     def add_comp_voxel(self, comp_voxel: Voxel, str_voxel: Voxel):
         """adds the comp_voxel for the specified str_voxel"""
-        print(f"adding complementary voxel (id={comp_voxel.id}, id2={-str_voxel.id2})")
+        # print(f"adding complementary voxel (id={comp_voxel.id}, id2={-str_voxel.id2})")
         id2 = -str_voxel.id2
         comp_voxel.set_id2(id2)
 

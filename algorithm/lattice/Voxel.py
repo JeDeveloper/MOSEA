@@ -92,7 +92,7 @@ class Voxel:
         str1 = f"voxel (id1={self.id}, id2={self.id2}) @ {self.coords} | cargo={self.cargo} @ {self.cargo_coords}:\n---"
         for v_coords, bond in self.bonds.items():
             i = self.vertices.index(v_coords)
-            str2 = f"\n -> {self.v_names[i]}: color={bond.color}, type={bond.type}"
+            str2 = f"\n -> {self.v_names[i]}: color={bond.color}, type={bond.type} ---> {bond.get_partner().get_label()} of voxel (id1={bond.get_partner_voxel().id}, id2={bond.get_partner_voxel().id2}) @ {bond.get_partner_voxel().coords}"
             str1 = str1+str2
 
         return str1

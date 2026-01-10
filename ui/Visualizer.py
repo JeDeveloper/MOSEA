@@ -87,7 +87,7 @@ class RunVisualizer:
             self.vis.plot_lattice(lattice, view_unit_cell)
 
         self.main_window.show()
-        self.app.exec()
+        # self.app.exec()
 
     def init_toolbar(self):
         from PyQt6.QtWidgets import QToolBar
@@ -100,4 +100,8 @@ class RunVisualizer:
 
     def close(self):
         self.vis.cleanup()
-        self.app.quit()
+        self.central_layout.removeWidget(self.vis)
+        self.vis.setParent(None)
+        self.vis.deleteLater()
+        self.main_window.close()
+        # self.app.quit()

@@ -58,7 +58,7 @@ class Bond(gl.GLGraphItem):
         )
         self.tip = gl.GLMeshItem(
             meshdata=tip_mesh,
-            smooth=True,
+            smooth=False,
             color=self.color,
             drawEdges=False
         )

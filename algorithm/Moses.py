@@ -1,6 +1,8 @@
 
+import time
+
 from algorithm.lattice.Lattice import Lattice
-from algorithm.lattice.Voxel import Bond
+from algorithm.lattice.Voxel import Voxel, Bond
 from algorithm.symmetry.Surroundings import Surroundings
 from algorithm.symmetry.SymmetryDf import SymmetryDf
 
@@ -11,6 +13,13 @@ class Moses:
     """the class for painting via the MOSES algorithm"""
     def __init__(self, lattice: Lattice):
         self.lattice = lattice
+
+    def run(self):
+        """computes both phases of MOSES algorithm, then maps the rest of the lattice"""
+        print("Starting MOSES...")
+        start_time = time.time()
+
+        # --- INITIALIZE DATA STRUCTURES ---
         # computes all symmetries, filling symmetry_df
         # with all possible voxel pairs and their symmetries
         self.surroundings = Surroundings(self.lattice)
@@ -19,16 +28,15 @@ class Moses:
 
         # initialize the structural voxels
         self.mesovoxel = Mesovoxel(self.lattice, self.has_symmetry)
-        self.painter = Painter(lattice, self.symmetry_df)
+        self.painter = Painter(self.lattice, self.symmetry_df)
         self.n_colors = 0
         self.uncolored_bonds = self.get_uncolored_bonds()
         self.seen_bonds = set(self.uncolored_bonds)
 
-    def run(self):
-        """computes both phases of MOSES algorithm, then maps the rest of the lattice"""
         self.str_paint()
         self.comp_paint()
         self.map_lattice()
+        print(f"Done! Took {time.time() - start_time:.2f} seconds.")
 
     def str_paint(self):
         """paint an initial path of bonds connecting all structural voxels"""
@@ -45,6 +53,11 @@ class Moses:
                 # paint the new bond
                 # print(f"\n--- PAINT S_BOND ({self.n_colors+1}) --- \nvoxel_{voxel1.id} ({bond1.vertex}) <---> voxel_{voxel2.id} ({bond2.vertex})")
                 _ = self.paint_new_bond(bond1, bond2, "structural")
+
+        # also paint self symmetries of all structural voxels
+        for sv in self.mesovoxel.structural_voxels:
+            sv = self.lattice.get_voxel(sv)
+            self.painter.self_sym_paint(sv)
 
     def comp_paint(self):
         """
@@ -73,7 +86,8 @@ class Moses:
                 # --- paint the new bond if still necessary ---
                 if self.paint_new_bond(bond1, bond2, "complementary"):
                     self.painter.map_paint(voxel2, pv, flip=False) # map back onto proto_voxel
-                    continue
+
+                continue
             
             # CASE 2: VOXEL NOT MAPPED YET
             sv, cv = self.mesovoxel.get_mesoparents(voxel2)
@@ -103,8 +117,8 @@ class Moses:
     def map_lattice(self):
         """once we have a finalized mesovoxel, map the unique voxels onto the rest of the lattice"""
         for v in self.lattice.voxels:
-            if self.mesovoxel.in_mesovoxel(v):
-                continue
+            # if self.mesovoxel.in_mesovoxel(v):
+            #     continue
             # copy-pasting logic from comp_paint.CASE_2
             sv, cv = self.mesovoxel.get_mesoparents(v)
             if cv and v.is_touching(sv.id2, type=2):
@@ -117,6 +131,12 @@ class Moses:
                 else:
                     self.painter.map_paint(sv, v)
                     v.set_id2(sv.id2)
+        
+        for uv in self.lattice.unit_cell_voxels:
+            v = self.lattice.get_voxel(self.lattice.voxel_dict3[uv.id])
+            self.painter.map_paint(v, uv)
+            uv.set_id2(v.id2)
+
 
     # --- utils ---
     def paint_new_bond(self, bond1: Bond, bond2: Bond, type:str="structural") -> int:
@@ -137,7 +157,7 @@ class Moses:
         return 1
     
     def get_uncolored_bonds(self) -> list[Bond]:
-        """get all uncolored bonds in the mesovoxe"""
+        """get all uncolored bonds in the mesovoxel"""
         voxels = set(self.mesovoxel.all_voxels())
         bonds = set()
         bond_queue = []
@@ -156,3 +176,7 @@ class Moses:
             if b.color is None and b not in self.seen_bonds:
                 self.uncolored_bonds.append(b) 
                 self.seen_bonds.add(b)
+    
+    def unique_voxels(self) -> list[Voxel]:
+        """Get all unique voxels in the Mesovoxel"""
+        return [self.lattice.get_voxel(v) for v in self.mesovoxel.all_voxels()]

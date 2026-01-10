@@ -44,7 +44,7 @@ class Octa(gl.GLGraphItem):
         particle_mesh = gl.MeshData.sphere(rows=5, cols=5, radius=0.10)
         self.particle = gl.GLMeshItem(
             meshdata=particle_mesh, 
-            smooth=True,
+            smooth=False,
             color=self.cargo_color,
             drawEdges=False
         )
