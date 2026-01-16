@@ -1,6 +1,7 @@
 from algorithm.lattice.Voxel import Voxel
 from algorithm.lattice.Lattice import Lattice
 from typing import Callable, Any
+from collections import defaultdict, deque
 
 class Mesovoxel:
     def __init__(self, lattice: Lattice, has_symmetry: Callable[[Any, Any], tuple[bool, list]]):
@@ -19,8 +20,6 @@ class Mesovoxel:
         # can be indexed with id2-1
         self.structural_voxels, self.adj_list = self.init_structural_voxels()
         self.complementary_voxels: list[int] = []
-        
-        self.init_structural_voxels()
 
     def init_structural_voxels(self) -> tuple[list[int], dict[int, list[int]]]:
         """
@@ -39,24 +38,141 @@ class Mesovoxel:
 
         # fill in the data structures with v_0
         structural_voxels = [v_0.id]
-        adj_list = {}
-        adj_list[1] = [v_0.id]
         
         i = 2
         for voxel in voxels:
+            had_sym = False
             for sv in structural_voxels:
                 has_sym, _ = self.has_symmetry(voxel, sv)
-                if has_sym: # skip the else block if voxel has symmetry with something in sv
-                    sv = self.lattice.get_voxel(sv)
-                    adj_list[sv.id2].append(voxel.id)
+                if has_sym: # skip if voxel has symmetry with something in sv
+                    # sv = self.lattice.get_voxel(sv)
+                    # adj_list[sv.id2].append(voxel.id)
+                    had_sym = True
                     break
-            else:
-                voxel.set_id2(i)
-                structural_voxels.append(voxel.id)
-                adj_list[i] = [voxel.id]
-                i += 1
+            if had_sym:
+                continue
+            # add a new structural voxel to our list
+            # voxel.set_id2(i)
+            structural_voxels.append(voxel.id)
+            i += 1
+
+        # get a CONNECTED SET of structural voxels
+        structural_voxels = self.connect_sv2(structural_voxels)
+
+        # initialize the adjacency list
+        adj_list = defaultdict(list)
+        for i, v_id in enumerate(structural_voxels):
+            v = self.lattice.get_voxel(v_id)
+            v.set_id2(i+1)
+            adj_list[v.id2].append(v.id)
 
         return structural_voxels, adj_list
+    
+    def connect_sv2(self, structural_voxels: list[int]) -> list[int]:
+        print("Finding a connected set of structural voxels...")
+
+        structural_voxels = list(structural_voxels)
+        seed = structural_voxels[0]
+        target = set(structural_voxels)
+
+        # part 1: find connected subset containing the seed
+        q = deque([seed])
+        visited = {seed}
+        connected = {seed}
+
+        while q:
+            v = q.popleft()
+            v = self.lattice.get_voxel(v)
+            for bond in v.bonds.values():
+                pv = bond.get_partner_voxel()
+                if pv is None:
+                    continue
+                if pv.id in target and pv.id not in visited:
+                    visited.add(pv.id)
+                    connected.add(pv.id)
+                    q.append(pv.id)
+        
+        unconnected = target - connected
+
+        # part 2: expand outward from the connected frontier
+        # swapping connected voxels which are symmetric to unconnected ones
+        frontier = deque(list(connected))
+        visited = set(connected)
+
+        while unconnected and frontier:
+            v = self.lattice.get_voxel(frontier.popleft())
+
+            for bond in v.bonds.values():
+                pv = bond.get_partner_voxel()
+                if pv is None or pv.id in visited:
+                    continue
+
+                visited.add(pv.id)
+                frontier.append(pv.id)
+
+                # check if partner voxel can replace anything in unconnected
+                for uc in list(unconnected):
+                    uc = self.lattice.get_voxel(uc)
+                    has_sym, _ = self.has_symmetry(pv, uc)
+                    if has_sym:
+                        print(f"Replacing unconnected voxel {uc.id} with {pv.id}")
+                        unconnected.remove(uc.id)
+                        connected.add(pv.id)
+                        break
+        
+        if unconnected:
+            raise RuntimeError(
+                f"Could not find connected symmetric replacements for {len(unconnected)} "
+                f"unconnected structural voxels: {sorted(list(unconnected))[:10]}..."
+            )
+    
+        print("Done!")
+        return list(connected)
+
+    
+    def connect_sv(self, structural_voxels: list[int]) -> list[int]:
+        """Given a set of structural voxels, reshuffle things
+        around until we choose a set which is all connected."""
+        print("Finding a connected set of structural voxels...")
+        structural_voxels = list(structural_voxels)
+        v = structural_voxels.pop(0)
+        v = self.lattice.get_voxel(v)
+        open_bonds = [b for b in v.bonds.values()]
+        connected = {v.id}
+
+        while len(open_bonds) > 0:
+            bond = open_bonds.pop(0)
+            pv = bond.get_partner_voxel()
+            if pv.id in structural_voxels:
+                open_bonds.extend([b for b in pv.bonds.values() if b not in open_bonds])
+                connected.add(pv.id)
+        
+        unconnected = set(structural_voxels) - connected
+
+        open_bonds = []
+
+        for v in connected:
+            v = self.lattice.get_voxel(v)
+            open_bonds.extend([b for b in v.bonds.values()])
+        
+        while len(unconnected) > 0:
+            bond = open_bonds.pop(0)
+            pv = bond.get_partner_voxel()
+            
+            # check if partner voxel can replace anything in unconnected
+            for uc in unconnected:
+                uc = self.lattice.get_voxel(uc)
+                has_sym, _ = self.has_symmetry(pv, uc)
+                if has_sym:
+                    print(f"Replacing unconnected voxel {uc.id} with {pv.id}")
+                    unconnected.remove(uc.id)
+                    connected.add(pv.id)
+                    open_bonds.extend([b for b in pv.bonds.values() if b not in open_bonds])
+                    break
+        
+        print("Done!")
+        
+        return list(connected)
     
 
     def in_mesovoxel(self, voxel: Voxel|int, type=1) -> bool:
@@ -106,7 +222,7 @@ class Mesovoxel:
     
     def add_comp_voxel(self, comp_voxel: Voxel, str_voxel: Voxel):
         """adds the comp_voxel for the specified str_voxel"""
-        # print(f"adding complementary voxel (id={comp_voxel.id}, id2={-str_voxel.id2})")
+        print(f"adding complementary voxel (id={comp_voxel.id}, id2={-str_voxel.id2})")
         id2 = -str_voxel.id2
         comp_voxel.set_id2(id2)
 

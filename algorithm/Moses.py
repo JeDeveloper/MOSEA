@@ -35,7 +35,7 @@ class Moses:
 
         self.str_paint()
         self.comp_paint()
-        self.map_lattice()
+        # self.map_lattice()
         print(f"Done! Took {time.time() - start_time:.2f} seconds.")
 
     def str_paint(self):
@@ -51,7 +51,7 @@ class Moses:
                 if (bond1.color or bond2.color) or (voxel2.id not in self.mesovoxel.structural_voxels):
                     continue
                 # paint the new bond
-                # print(f"\n--- PAINT S_BOND ({self.n_colors+1}) --- \nvoxel_{voxel1.id} ({bond1.vertex}) <---> voxel_{voxel2.id} ({bond2.vertex})")
+                print(f"\n--- PAINT S_BOND ({self.n_colors+1}) --- \nvoxel_{voxel1.id} ({bond1.get_label()}) <---> voxel_{voxel2.id} ({bond2.get_label()})")
                 _ = self.paint_new_bond(bond1, bond2, "structural")
 
         # also paint self symmetries of all structural voxels
@@ -85,12 +85,12 @@ class Moses:
 
                 # --- paint the new bond if still necessary ---
                 if self.paint_new_bond(bond1, bond2, "complementary"):
+                    print(f"\n--- PAINT C_BOND ({self.n_colors}) --- \nvoxel_{bond1.voxel.id} ({bond1.get_label()}) <---> voxel_{voxel2.id} ({bond2.get_label()})")
                     self.painter.map_paint(voxel2, pv, flip=False) # map back onto proto_voxel
-
                 continue
             
             # CASE 2: VOXEL NOT MAPPED YET
-            sv, cv = self.mesovoxel.get_mesoparents(voxel2)
+            sv, cv = self.mesovoxel.get_mesoparents(voxel2) # sv always exists, cv may not
             pv, flip = None, False
 
             # map either flipping complementary bonds or not based on equivalence class
@@ -112,6 +112,7 @@ class Moses:
 
             # --- paint the new bond if still necessary ---
             if self.paint_new_bond(bond1, bond2, "complementary"):
+                print(f"\n--- PAINT C_BOND ({self.n_colors}) --- \nvoxel_{bond1.voxel.id} ({bond1.get_label()}) <---> voxel_{voxel2.id} ({bond2.get_label()})")
                 self.painter.map_paint(voxel2, sv, flip) # map back onto proto_voxel
 
     def map_lattice(self):
@@ -121,6 +122,11 @@ class Moses:
             #     continue
             # copy-pasting logic from comp_paint.CASE_2
             sv, cv = self.mesovoxel.get_mesoparents(v)
+            if sv is None:
+                raise RuntimeError(
+                    f"get_mesoparents returned sv=None for voxel id={v.id}, "
+                    f"id2={getattr(v,'id2',None)}, coords={getattr(v,'coords',None)}"
+                )
             if cv and v.is_touching(sv.id2, type=2):
                 self.painter.map_paint(cv, v)
                 v.set_id2(cv.id2)

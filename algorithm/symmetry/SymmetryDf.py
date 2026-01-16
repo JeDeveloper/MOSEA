@@ -71,17 +71,26 @@ class SymmetryDf:
         # important references
         self.lattice: Lattice = lattice
         self.surroundings = surroundings
+        self.precompute_surroundings()
 
         # create dictionary of all possible symmetry operations
         # eg: {'90° X-axis': lambda x: np.rot90(x, 1, (0, 1)), ...}
         self.symmetry_operations = RotationDict().all_rotations
+        self.sym_labels = list(self.symmetry_operations.keys())
+        self.sym_funcs = list(self.symmetry_operations.values())
         
         # the essential data structure containing all voxel pairs and their symmetries
         # eg: (0, 1): {'90° X-axis': True, '180° Y-axis': False, ...}
         self.symmetry_df = self.init_symmetry_df()
 
+        # a cheaper way of storing it
+        n, m = len(self.lattice.voxels), len(self.symmetry_operations)
+         # -1: uncomputed, 0: False, 1: True
+        self.sym = np.full((m, n, n), -1, dtype=np.int8) 
+
         # fill all symmetries in place
-        self.compute_all_symmetries()
+        self.compute_all_symmetries2()
+        self.symmetry_df = self.build_symmetry_df_from_sym()
     
 
     # --- useful functions for painter --- 
@@ -94,7 +103,7 @@ class SymmetryDf:
         has_sym = True if len(symlist) > 0 else False
         return has_sym, symlist
 
-    def symlist(self, voxel1, voxel2) -> list[str]:
+    def symlist_old(self, voxel1, voxel2) -> list[str]:
         """
         Get the list of valid symmetries for a specific voxel pair.
         Returns an empty list if no symmetries are found.
@@ -124,6 +133,24 @@ class SymmetryDf:
         symlist = list(valid_symmetries)
 
         return symlist
+
+    def symlist(self, voxel1, voxel2) -> list[str]:
+        voxel1_id = self.lattice.get_voxel(voxel1).id
+        voxel2_id = self.lattice.get_voxel(voxel2).id
+
+        # map unit cell voxels to their main original counterparts if supplied
+        if voxel1_id >= len(self.lattice.voxels):
+            voxel1_id = self.lattice.voxel_dict3[voxel1_id]
+        if voxel2_id >= len(self.lattice.voxels):
+            voxel2_id = self.lattice.voxel_dict3[voxel2_id]
+
+        col = self.sym[:, voxel1_id, voxel2_id]
+        if (col < 0).any():
+            # means you queried before computing all symmetries
+            pass
+        # return labels where value == 1
+        return [self.sym_labels[k] for k in np.flatnonzero(col == 1)]
+
     
     def get_symvoxels(self, voxel: int) -> list[int]:
         """
@@ -139,6 +166,18 @@ class SymmetryDf:
         return symvoxels
     
     # --- logic / internal ---
+    def precompute_surroundings(self) -> None:
+        """precompute surroundings for all voxels in the lattice for faster symmetry checks later"""
+        n = len(self.lattice.voxels)
+        self.base_coords = [None]*n # indexed by voxel.id
+        self.base_cargos = [None]*n
+
+        for v in self.lattice.voxels:
+            coords, cargos = self.surroundings.voxel_surroundings2(v)
+            # coords, cargos = self.surroundings.canonicalize(coords, cargos)
+            self.base_coords[v.id] = coords
+            self.base_cargos[v.id] = cargos
+        
     def init_symmetry_df(self) -> pd.DataFrame:
         """
         Initialize an empty symmetry_df with all possible voxel pairs as the index, with 
@@ -156,6 +195,40 @@ class SymmetryDf:
         voxel_pairs = [VoxelPair.make_label(pair) for pair in sorted_voxel_pairs_set]
         symmetry_df = pd.DataFrame(index=voxel_pairs, columns=self.symmetry_operations.keys())
         return symmetry_df
+    
+    def compute_all_symmetries2(self):
+        voxels = self.lattice.voxels
+        n = len(voxels)
+        # m = len(self.symmetry_operations)
+
+        for k, (sym_label, sym_func) in enumerate(self.symmetry_operations.items()):
+            for i, v1 in enumerate(voxels):
+                # rotate + canonicalize once per (sym, v1)
+                rot_coords1 = self.surroundings.rotate2(self.base_coords[v1.id], sym_func)
+                rot_coords1, cargos1 = self.surroundings.canonicalize(rot_coords1, self.base_cargos[v1.id])
+
+                # bytes for cheaper compare
+                rot_coords1_b = rot_coords1.view(np.uint8).tobytes()
+                cargos1_b = cargos1.view(np.uint8).tobytes()
+
+                for j in range(i, n):
+                    v2 = voxels[j]
+                    coords2 = self.base_coords[v2.id]
+                    cargos2 = self.base_cargos[v2.id]
+                    coords2, cargos2 = self.surroundings.canonicalize(coords2, cargos2)
+                    
+                    coords2_b = coords2.view(np.uint8).tobytes()
+                    cargos2_b = cargos2.view(np.uint8).tobytes()
+                    
+                    # cheap early reject
+                    if cargos1_b != cargos2_b:
+                        self.sym[k, v1.id, v2.id] = 0
+                        self.sym[k, v2.id, v1.id] = 0
+                        continue
+
+                    has_sym = (rot_coords1_b == coords2_b)
+                    self.sym[k, v1.id, v2.id] = 1 if has_sym else 0
+                    self.sym[k, v2.id, v1.id] = 1 if has_sym else 0
     
     def compute_all_symmetries(self):
         """just compute all pair-wise symmetries between voxels in the lattice"""
@@ -205,7 +278,7 @@ class SymmetryDf:
         """
         voxel_id = voxel.id if isinstance(voxel, Voxel) else voxel
         symdict = {}
-        for voxel2 in self.lattice.voxels.values():
+        for voxel2 in self.lattice.voxels:
             current_symlist = self.symlist(voxel_id, voxel2.id)
             # only add symlists for voxel pairs with valid symmetries
             if len(current_symlist) > 0:
@@ -226,5 +299,35 @@ class SymmetryDf:
             print('\n')
 
 
+    def build_symmetry_df_from_sym(self) -> pd.DataFrame:
+        voxels = self.lattice.voxels
+        n = len(voxels)
+        sym_labels = list(self.symmetry_operations.keys())
+
+        # Build index labels in the SAME order as your old init_symmetry_df
+        # i.e., unique unordered pairs via frozenset, sorted lexicographically.
+        pair_sets = set()
+        for i in range(n):
+            for j in range(n):
+                pair_sets.add(frozenset([i, j]))
+        pair_sets = sorted(pair_sets)  # same idea as before
+        index = [VoxelPair.make_label(p) for p in pair_sets]
+
+        df = pd.DataFrame(index=index, columns=sym_labels, dtype=bool)
+
+        # Fill it from self.sym
+        # For each unordered pair label "(a, b)", store sym[:, a, b]
+        for pset, label in zip(pair_sets, index):
+            ij = sorted(pset)
+            if len(ij) == 1:
+                i = j = ij[0]
+            else:
+                i, j = ij
+
+            # sym values are -1/0/1 -> convert to bool
+            # (If you guarantee full computation, there should be no -1)
+            df.loc[label, :] = (self.sym[:, i, j] == 1)
+
+        return df
 
     

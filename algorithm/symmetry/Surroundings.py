@@ -6,42 +6,13 @@ class Surroundings:
         self.lattice = lattice
         xdim, ydim, zdim = lattice.dimensions
         self.max_dim = max(xdim, ydim, zdim)
+        self.SCALE = 100
 
         # note: rel is a cube of coordinates centered at (0,0,0)
         r = np.arange(-self.max_dim, self.max_dim + 1, dtype=np.int32)
         x, y, z = np.meshgrid(r, r, r, indexing="ij")
         self.rel = np.stack([x.ravel(), y.ravel(), z.ravel()], axis=1)  # (K, 3)
 
-    def voxel_surroundings(self, voxel) -> dict[tuple[float, float, float], int]:
-        """
-        create a cube of surrounding particles all oriented wrt. where 
-        v.cargo_coords would be
-        """
-        v = self.lattice.get_voxel(voxel)
-
-        xdim, ydim, zdim = self.lattice.dimensions
-        max_dim = max(xdim, ydim, zdim)
-
-        # create a surroundings cube at least max_len out from the center
-        coord_range = np.linspace(-max_dim, max_dim, 2*max_dim+1)
-        x, y, z = np.meshgrid(coord_range, coord_range, coord_range, indexing='ij')
-        coords = np.array([x.flatten(), y.flatten(), z.flatten()]).T
-
-        surr = {}
-        for coord in coords:
-            # convert voxel_surr coords into an index into the original lattice
-            x, y, z = coord + np.array(v.coords)
-            og_x = int((xdim + x) % xdim)
-            og_y = int((ydim + y) % ydim)
-            og_z = int((zdim + z) % zdim)
-            
-            og_voxel = self.lattice.get_voxel((og_x, og_y, og_z))
-
-            # translate the coordinate a little for the accurate surroundings
-            coord = coord + np.array(og_voxel.cargo_coords)
-            surr[tuple(coord)] = og_voxel.cargo
-
-        return surr
     
     def voxel_surroundings2(self, voxel) -> tuple[list[tuple[float, float, float]], list[int]]:
         """
@@ -79,7 +50,8 @@ class Surroundings:
             coords[i, 2] = float(rel[i, 2]) + float(og_voxel.cargo_coords[2])
             cargos[i] = og_voxel.cargo
 
-        return coords, cargos
+        coords_i = np.rint(coords * self.SCALE).astype(np.int32)
+        return coords_i, cargos.astype(np.int32, copy=False)
 
     def rotate(self, surr_dict: dict[tuple[float, float, float], int], rotation) -> dict[tuple[float, float, float], int]:
         """
@@ -97,16 +69,17 @@ class Surroundings:
 
         return rot_surr
     
-    def rotate2(self, coords: np.ndarray, rotation, round_decimals=2) -> np.ndarray:
+    def rotate2(self, coords: np.ndarray, rotation) -> np.ndarray:
         """
         accepts a surroundings coordinates array (N, 3) and rotates each coordinate 
         based on the supplied rotation function
+
+        returns an array of the same shape as the input
         """
         rot_coords = rotation(coords)
-        rot_coords = np.round(rot_coords, round_decimals)
-        return rot_coords.astype(np.float32)
+        return np.rint(rot_coords).astype(np.int32)
 
-    def canonicalize(self, coords: np.ndarray, cargos: np.ndarray, decimals: int = 2):
+    def canonicalize(self, coords: np.ndarray, cargos: np.ndarray):
         """
         Turn (coords, cargos) into a canonical order so we can compare with array_equal.
         - rounds coords to kill float noise
@@ -116,10 +89,7 @@ class Surroundings:
 
         # lexsort wants keys last-to-first, so z, then y, then x
         order = np.lexsort((coords[:, 2], coords[:, 1], coords[:, 0]))
-
-        c_sorted = coords[order]
-        cargos_sorted = cargos[order]
-        return c_sorted, cargos_sorted
+        return coords[order], cargos[order]
 
 if __name__ == "__main__":
     from algorithm.lattice.Voxel import Voxel

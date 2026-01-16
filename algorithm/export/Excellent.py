@@ -336,7 +336,8 @@ class Excellent:
                 cargo_coords=tuple(map(int, r["Cargo_Coords"].strip("()").split(",")))
             )
             v.id = int(r["Voxel"])
-            v.set_id2(int(r["Mesovoxel_ID"]))
+            mesovoxel_id = r.get("Mesovoxel_ID", 0)
+            v.set_id2(int(mesovoxel_id) if pd.notna(mesovoxel_id) else 0)
             # set bonds
             for vertex, label in zip(
                 v.vertices,
@@ -357,7 +358,8 @@ class Excellent:
                 cargo=int(r["Cargo"]),
                 cargo_coords=tuple(map(int, r["Cargo_Coords"].strip("()").split(",")))
             )
-            mv.set_id2(int(r["Mesovoxel_ID"]))
+            mesovoxel_id = r.get("Mesovoxel_ID", 0)
+            mv.set_id2(int(mesovoxel_id) if pd.notna(mesovoxel_id) else 0)
             # set bonds
             for vertex, label in zip(
                 mv.vertices,
