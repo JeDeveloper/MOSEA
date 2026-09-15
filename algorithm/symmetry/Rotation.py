@@ -61,25 +61,38 @@ class RotationDict:
             - double_rotations: Dictionary of lambda functions for double rotations
                                 {"label1 + label2": lambda x: rotation2(rotation1(x))}
         """
-        frozen_double_rotations = [] # List to store frozensets of double rotations (avoids duplicates)
+        # List of ordered (label1, label2) pairs of single rotations on
+        # different axes. We deliberately DO NOT collapse (a, b) and (b, a)
+        # into an unordered pair here: rotation composition is
+        # non-commutative, so rot1(rot2(x)) and rot2(rot1(x)) are genuinely
+        # different rotations and both are needed to span the cube group.
+        #
+        # The previous implementation stored each pair as a frozenset and
+        # later did `label1, label2 = rotation_pair`, which unpacks a
+        # 2-element frozenset of strings in per-process hash order. With
+        # PYTHONHASHSEED unset that made both the composition order AND the
+        # resulting dict key non-deterministic across runs, so downstream
+        # symmetry lookups silently changed from one process to the next.
+        double_rotation_pairs = [] # ordered pairs, deduped, deterministic
+        seen_pairs = set()
 
         for label1 in self.single_rotations.keys():
             for label2 in self.single_rotations.keys():
-                # Create a frozen set of the pair of rotation labels
-                rotation_pair = frozenset([label1, label2])
-
                 # Get the last word in string (the axis) from each rotation label
-                rotation1_axis = label1.split(' ')[-1] 
+                rotation1_axis = label1.split(' ')[-1]
                 rotation2_axis = label2.split(' ')[-1]
 
-                # Only consider double rotation if they are on different axes and not already considered
-                if rotation1_axis != rotation2_axis and rotation_pair not in frozen_double_rotations:
-                    frozen_double_rotations.append(rotation_pair)
-        
-        # Iterate through list of non-repeating double rotations and create a dictionary of lambda functions
+                if rotation1_axis == rotation2_axis:
+                    continue # skip double rotations on the same axis
+
+                pair = (label1, label2)
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    double_rotation_pairs.append(pair)
+
+        # Iterate through the ordered pairs and create a dictionary of lambda functions
         double_rotations = {}
-        for rotation_pair in frozen_double_rotations:
-            label1, label2 = rotation_pair
+        for label1, label2 in double_rotation_pairs:
             rotation1, rotation2 = self.single_rotations[label1], self.single_rotations[label2]
 
             double_rotations[f'{label1} + {label2}'] = \

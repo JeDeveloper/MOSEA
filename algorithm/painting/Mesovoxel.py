@@ -220,6 +220,29 @@ class Mesovoxel:
         v_id = self.adj_list[id2][0]
         return self.lattice.get_voxel(v_id)
     
+    def add_structural_voxel(self, voxel: Voxel) -> int:
+        """Register `voxel` as the sole representative of a brand-new structural
+        voxel type, returning its new (positive) id2.
+
+        Used when a voxel provably cannot be expressed as a pure rotation of
+        its structural parent -- painting one of its complementary bonds forced
+        in a color that no symmetry of the parent accounts for -- so forcing it
+        under the parent's id2 (as comp_paint's CASE 2 'else' branch used to do
+        unconditionally) is wrong: it groups two non-rotation-equivalent voxels
+        as one "type" and can leave the minted color with no complement on any
+        representative. This is the Level-3 split the MOSES paper describes for
+        the case CASE 2's 'if' branch (add_comp_voxel) does not cover.
+        """
+        new_id2 = max((k for k in self.adj_list if k > 0), default=0) + 1
+        print(f"adding structural voxel (id={voxel.id}, id2={new_id2}) -- "
+              f"not a rotation of its structural parent")
+        voxel.set_id2(new_id2)
+
+        self.adj_list[new_id2] = [voxel.id]
+        if voxel.id not in self.structural_voxels:
+            self.structural_voxels.append(voxel.id)
+        return new_id2
+
     def add_comp_voxel(self, comp_voxel: Voxel, str_voxel: Voxel):
         """adds the comp_voxel for the specified str_voxel"""
         print(f"adding complementary voxel (id={comp_voxel.id}, id2={-str_voxel.id2})")
