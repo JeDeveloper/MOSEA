@@ -100,7 +100,7 @@ class SymmetryDf:
         else returns FALSE, []
         """
         symlist = self.symlist(voxel1, voxel2)
-        has_sym = True if len(symlist) > 0 else False
+        has_sym = len(symlist) > 0
         return has_sym, symlist
 
     def symlist_old(self, voxel1, voxel2) -> list[str]:
@@ -162,7 +162,7 @@ class SymmetryDf:
         """
         voxel_id = self.lattice.get_voxel(voxel).id
         symdict = self.symdict(voxel_id)
-        symvoxels = [sv for sv in symdict.keys()]
+        symvoxels = [sv for sv in symdict]
         return symvoxels
     
     # --- logic / internal ---
